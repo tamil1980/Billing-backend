@@ -3,8 +3,8 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import mongoose from 'mongoose';
 import path from 'path';
+
 import { fileURLToPath } from 'url';
-import { MongoMemoryServer } from 'mongodb-memory-server';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -15,10 +15,8 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-let mongoUri = 'mongodb+srv://tamilselvansk_db_user:aFS0lEjrpFYpItJL@cluster0.fpe53r9.mongodb.net/?appName=Cluster0';
 let dbError = null;
 let dbReady = false;
-let memoryServer = null;
 
 const userSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true },
@@ -64,8 +62,7 @@ const invoiceSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now }
 }, { versionKey: false });
 
-userSchema.index({ email: 1 }, { unique: true });
-itemSchema.index({ sku: 1 }, { unique: true, sparse: true });
+
 
 const User = mongoose.model('User', userSchema);
 const Item = mongoose.model('Item', itemSchema);
@@ -125,47 +122,33 @@ async function seedData() {
   }
 }
 
-async function initDatabase() {
+
+
+
+
+await mongoose.connect(process.env.MONGO_URI, {
+  family: 4,
+  serverSelectionTimeoutMS: 10000,
+});
+
+console.log("MongoDB Connected");
+
+mongoose.connection.on("connected", () => {
+  dbReady = true;
   dbError = null;
+});
+
+mongoose.connection.on("error", (err) => {
+  console.error("MongoDB Error:", err.message);
+  dbError = err.message;
+});
+
+mongoose.connection.on("disconnected", () => {
+  console.log("MongoDB Disconnected");
   dbReady = false;
-  console.log(`Connecting to MongoDB at ${mongoUri}...`);
+});
 
-  console.error("Atlas connection failed:");
-  
 
-  
-
-  
-  try {
-    await mongoose.connect(mongoUri, {
-      serverSelectionTimeoutMS: 10000
-    });
-
-    dbReady = true;
-    await seedData();
-    console.log('✅ SUCCESS: Connected to MongoDB and collections are ready!');
-  } catch (err) {
-    dbError = err.message;
-    dbReady = false;
-
-    try {
-      memoryServer = await MongoMemoryServer.create();
-      mongoUri = memoryServer.getUri();
-      await mongoose.connect(mongoUri, {
-        serverSelectionTimeoutMS: 10000
-      });
-      dbReady = true;
-      await seedData();
-      console.log('✅ SUCCESS: Connected to local in-memory MongoDB fallback.');
-    } catch (fallbackErr) {
-      dbError = fallbackErr.message;
-      console.error('❌ ERROR: MongoDB connection failed:', err.message);
-      console.error('Please verify your MONGO_URI or DB_URI in your .env file.');
-    }
-  }
-}
-
-initDatabase();
 
 const requireDb = (req, res, next) => {
   if (!dbReady || mongoose.connection.readyState !== 1) {
@@ -433,6 +416,9 @@ app.delete('/api/invoices/:id', requireDb, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => console.log(`Ledgerly MongoDB API server running on port ${PORT}`));
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Ledgerly MongoDB API server running on port ${PORT}`));
